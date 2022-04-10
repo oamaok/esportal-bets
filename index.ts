@@ -1,5 +1,6 @@
 // AUTH URL https://discord.com/api/oauth2/authorize?client_id=961569787924856883&permissions=51264&scope=bot
 
+import * as fs from 'fs/promises'
 import { config as dotenvConfig } from 'dotenv'
 import fetch, { Response } from 'node-fetch'
 import {
@@ -9,7 +10,9 @@ import {
   TextChannel,
   ThreadChannel,
   User,
+  ThreadAutoArchiveDuration,
 } from 'discord.js'
+import * as scheduler from 'node-schedule'
 
 dotenvConfig()
 
@@ -137,7 +140,7 @@ const getCurrentMatchForUser = async (id: number) => {
   return getMatch(player.current_match.id)
 }
 
-enum ONLINE_STATUS  {
+enum ONLINE_STATUS {
   OFFLINE = 0,
   ONLINE = 5,
   IN_GAME = 1,
@@ -162,6 +165,24 @@ const client = new Client({
   intents: [Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES],
 })
 
+const loadSaldos = async (): Promise<Record<string, number>> => {
+  try {
+    const data = await fs.readFile('./saldos.json')
+    return JSON.parse(data.toString('utf-8'))
+  } catch (err) {
+    return {}
+  }
+}
+
+const onceADay = new scheduler.RecurrenceRule()
+onceADay.hour = 6
+onceADay.minute = 0
+onceADay.second = 0
+onceADay.tz = 'Europe/Helsinki'
+
+const saveSaldos = (saldos: Record<string, number>) =>
+  fs.writeFile('./saldos.json', JSON.stringify(saldos))
+
 client.login(process.env.DISCORD_TOKEN)
 
 client.on('ready', async () => {
@@ -171,18 +192,15 @@ client.on('ready', async () => {
   )) as TextChannel
 
   let matches: Match[] = []
-  const saldos: Record<string, number> = {
-    '961569787924856883': 10000,
-    '387597309157965836': 0,
-    '202748663888478208': 10000,
-    '227497566902681600': 12101,
-    '374583200099598336': 10000,
-    '268408946933497856': 25970,
-    '197288866133049344': 5000,
-    '238994636578881536': 15253,
-    '374638531022290944': 10000,
-    '292946365435215872': 10000,
-  }
+  const saldos: Record<string, number> = await loadSaldos()
+
+  scheduler.scheduleJob(onceADay, async () => {
+    for (let userId of Object.keys(saldos)) {
+      saldos[userId] += 100
+    }
+
+    await channel.send(`💰 Kaikkien saldoon on lisätty 100 shillinkiä! 💰`)
+  })
 
   client.on('messageCreate', async (message) => {
     const better = message.author
@@ -195,6 +213,25 @@ client.on('ready', async () => {
     if (message.content === '!saldo') {
       await message.channel.send(
         `💰 Saldosi on ${saldos[better.id]} shillinkiä ${better.toString()} 💰`
+      )
+      return
+    }
+
+    if (message.content === '!leaderboard') {
+      const sortedSaldos = Object.entries(saldos).sort(([, a], [, b]) => b - a)
+
+      const [first, second, third] = await Promise.all([
+        channel.guild.members.fetch(sortedSaldos[0][0]),
+        channel.guild.members.fetch(sortedSaldos[1][0]),
+        channel.guild.members.fetch(sortedSaldos[2][0]),
+      ])
+
+      await message.channel.send(
+        `
+🥇 ${first.nickname ?? first.user.username}: ${sortedSaldos[0][1]} shillinkiä
+🥈 ${second.nickname ?? second.user.username}: ${sortedSaldos[1][1]} shillinkiä
+🥉 ${third.nickname ?? third.user.username}: ${sortedSaldos[2][1]} shillinkiä
+        `
       )
       return
     }
@@ -212,7 +249,7 @@ client.on('ready', async () => {
       }
 
       const [msgMatch, team, amountStr] =
-        (await message.content.match(/^!bet (team1|team2) (\d+)$/)) ?? []
+        message.content.match(/^!bet (team1|team2) (\d+)$/) ?? []
 
       if (!msgMatch) {
         return
@@ -331,6 +368,7 @@ client.on('ready', async () => {
           const message = await channel.send({ embeds: [matchEmbed] })
 
           match.thread = await message.startThread({
+            autoArchiveDuration: 60,
             name: `Matsi #${matchData.id}`,
           })
 
@@ -364,19 +402,23 @@ client.on('ready', async () => {
 
           match.thread?.send(`
             💰 Matsi päättyi. Shillinkejä päätyi voittajille seuraavasti: 💰
-            ${payouts
-              .map(
-                (payout) =>
-                  ` • ${payout.better.toString()} +${payout.amount} shillinkiä`
-              )
-              .join('\n')}
+${payouts
+  .map(
+    (payout) => ` • ${payout.better.toString()} +${payout.amount} shillinkiä`
+  )
+  .join('\n')}
           `)
 
           console.log('saldos', saldos)
+          await saveSaldos(saldos)
 
           setTimeout(() => {
             match.thread?.setArchived(true)
-          }, 1000 * 60 * 2)
+          }, 1000 * 60 * 5)
+
+          setTimeout(() => {
+            match.thread?.setArchived(true)
+          }, 1000 * 60 * 10)
 
           match.finished = true
         }
