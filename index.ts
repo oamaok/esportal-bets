@@ -207,7 +207,7 @@ client.on('ready', async () => {
 
     // Init saldos when encountering a new messager
     if (typeof saldos[better.id] === 'undefined') {
-      saldos[better.id] = 10000
+      saldos[better.id] = 1000
     }
 
     if (message.content === '!saldo') {
@@ -217,7 +217,7 @@ client.on('ready', async () => {
       return
     }
 
-    if (message.content === '!leaderboard') {
+    if (message.content === '!top') {
       const sortedSaldos = Object.entries(saldos).sort(([, a], [, b]) => b - a)
 
       const [first, second, third] = await Promise.all([
@@ -227,7 +227,26 @@ client.on('ready', async () => {
       ])
 
       await message.channel.send(
+        `Top3 shillingit:
+🥇 ${first.nickname ?? first.user.username}: ${sortedSaldos[0][1]} shillinkiä
+🥈 ${second.nickname ?? second.user.username}: ${sortedSaldos[1][1]} shillinkiä
+🥉 ${third.nickname ?? third.user.username}: ${sortedSaldos[2][1]} shillinkiä
         `
+      )
+      return
+    }
+
+    if (message.content === '!bottom') {
+      const sortedSaldos = Object.entries(saldos).sort(([, a], [, b]) => a - b)
+
+      const [first, second, third] = await Promise.all([
+        channel.guild.members.fetch(sortedSaldos[0][0]),
+        channel.guild.members.fetch(sortedSaldos[1][0]),
+        channel.guild.members.fetch(sortedSaldos[2][0]),
+      ])
+
+      await message.channel.send(
+        `Bottom3 shillingit:
 🥇 ${first.nickname ?? first.user.username}: ${sortedSaldos[0][1]} shillinkiä
 🥈 ${second.nickname ?? second.user.username}: ${sortedSaldos[1][1]} shillinkiä
 🥉 ${third.nickname ?? third.user.username}: ${sortedSaldos[2][1]} shillinkiä
@@ -339,10 +358,10 @@ client.on('ready', async () => {
 
           const matchEmbed = new MessageEmbed()
             .setColor('#5700a2')
-            .setTitle(`🎰 Uusi matsi! #${matchData.id} 🎰`)
+            .setTitle(`🎮 Uusi matsi! #${matchData.id} 🎮`)
             .setURL(`https://esportal.com/fi/match/${matchData.id}`)
             .setDescription(
-              '@here Lisätkää veikkauksenne threadiin! Aikaa veikkauksien lisäämiseen on viisi minuuttia tämän viestin lähetyksestä.'
+              'Lisätkää veikkauksenne threadiin! Aikaa veikkauksien lisäämiseen on viisi minuuttia tämän viestin lähetyksestä.'
             )
             .addFields(
               {
@@ -365,7 +384,10 @@ client.on('ready', async () => {
               }
             )
 
-          const message = await channel.send({ embeds: [matchEmbed] })
+          const message = await channel.send({
+            content: '🎮 @here 🎮',
+            embeds: [matchEmbed],
+          })
 
           match.thread = await message.startThread({
             autoArchiveDuration: 60,
@@ -377,11 +399,23 @@ client.on('ready', async () => {
           }, 1000 * 60 * 4)
 
           setTimeout(() => {
-            match.thread?.send('🔒 Panokset lukittu. 🔒')
+            match.thread?.send(`🔒 Panokset lukittu. 🔒`)
           }, 1000 * 60 * 5)
         }
 
         if (!matchData.active && !match.finished) {
+          if (matchData.team1_score === matchData.team2_score) {
+            match.thread?.send(
+              '❌ Matsi peruttu tjsp. En jaksa välittää. Mitään ei tapahdu. ❌'
+            )
+
+            for (const bet of Object.values(match.bets)) {
+              saldos[bet.better.id] += bet.amount
+            }
+
+            continue
+          }
+
           const winner =
             matchData.team1_score > matchData.team2_score ? 'team1' : 'team2'
           const payouts: { amount: number; better: User }[] = []
@@ -410,6 +444,13 @@ ${payouts
           `)
 
           console.log('saldos', saldos)
+          console.log(
+            'payouts',
+            payouts.map((p) => ({
+              id: p.better.id,
+              amount: p.amount,
+            }))
+          )
           await saveSaldos(saldos)
 
           setTimeout(() => {
