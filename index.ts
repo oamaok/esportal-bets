@@ -173,7 +173,7 @@ type Bet = {
 
 type Match = {
   data: EsportalMatch
-  date: number
+  locked: boolean
   finished: boolean
   thread: ThreadChannel | null
   bets: Record<string, Bet>
@@ -294,7 +294,7 @@ client.on('ready', async () => {
 
       const amount = parseInt(amountStr)
 
-      if (match.date + 1000 * 60 * 5 < Date.now()) {
+      if (match.locked) {
         await message.react('❌')
         await message.channel.send(
           `⌛ Olit liian myöhässä ${better.toString()} ⌛`
@@ -344,7 +344,7 @@ client.on('ready', async () => {
           if (!matchExists) {
             matches.push({
               data: match,
-              date: Date.now(),
+              locked: false,
               finished: false,
               thread: null,
               bets: {},
@@ -416,8 +416,9 @@ client.on('ready', async () => {
             match.thread?.send('⌛ Enää minuutti aikaa! ⌛')
           }, 1000 * 60 * 4)
 
-          setTimeout(() => {
-            match.thread?.send(`🔒 Panokset lukittu. 🔒`)
+          setTimeout(async () => {
+            await match.thread?.send(`🔒 Panokset lukittu. 🔒`)
+            match.locked = true
           }, 1000 * 60 * 5)
         }
 
