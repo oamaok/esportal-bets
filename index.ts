@@ -122,22 +122,40 @@ export interface MatchPlayer {
 }
 
 const getPlayerStatuses = async () => {
-  const response = (await fetch(
+  const response = await fetch(
     `https://esportal.com/api/user_profile/get?_=${Date.now()}&username=HalloumiKing&friends=1`
-  ).then((res) => res.json())) as UserProfile
-  return response.friends
+  ).then((res) => res.text())
+
+  try {
+    return (JSON.parse(response) as UserProfile).friends
+  } catch (err) {
+    throw { err, response }
+  }
 }
 
-const getMatch = async (id: number) =>
-  (await fetch(
+const getMatch = async (id: number) => {
+  const response = await fetch(
     `https://esportal.com/api/match/get?_=${Date.now()}&id=${id}`
-  ).then((res) => res.json())) as EsportalMatch
+  ).then((res) => res.text())
+
+  try {
+    return JSON.parse(response) as EsportalMatch
+  } catch (err) {
+    throw { err, response }
+  }
+}
 
 const getCurrentMatchForUser = async (id: number) => {
-  const player = (await fetch(
+  const response = await fetch(
     `https://esportal.com/api/user_profile/get?_=${Date.now()}&id=${id}&current_match=1`
-  ).then((res) => res.json())) as UserProfileWithCurrentMatch
-  return getMatch(player.current_match.id)
+  ).then((res) => res.text())
+
+  try {
+    const player = JSON.parse(response) as UserProfileWithCurrentMatch
+    return getMatch(player.current_match.id)
+  } catch (err) {
+    throw { err, response }
+  }
 }
 
 enum ONLINE_STATUS {
